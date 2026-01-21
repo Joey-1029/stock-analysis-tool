@@ -1,7 +1,36 @@
+# 基础数据科学库
 pandas
 numpy
+
+# 数据可视化
 matplotlib
 seaborn
+plotly
+bokeh
+
+# 股票数据获取
 yfinance
+akshare
+tushare
+pytdx
+
+# 机器学习（可选但推荐）
 scikit-learn
+xgboost
+lightgbm
+statsmodels
+ta-lib
+
+# Jupyter和交互式分析
 jupyter
+jupyterlab
+ipywidgets
+ipython
+notebook
+
+# 数据报告和导出
+nbconvert
+nbformat
+pdfkit
+reportlab
+openpyxl

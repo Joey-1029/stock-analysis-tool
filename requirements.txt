@@ -1,36 +1,68 @@
-# 基础数据科学库
-pandas
-numpy
 
-# 数据可视化
-matplotlib
-seaborn
-plotly
-bokeh
+## 最终的 `requirements.txt`
 
-# 股票数据获取
-yfinance
-akshare
-tushare
-pytdx
+```txt
+# ========== 核心数据科学库 ==========
+pandas>=1.5.0
+numpy>=1.23.0
+scipy>=1.9.0
 
-# 机器学习（可选但推荐）
-scikit-learn
-xgboost
-lightgbm
-statsmodels
-ta-lib
+# ========== 数据可视化 ==========
+matplotlib>=3.6.0
+seaborn>=0.12.0
+plotly>=5.10.0
 
-# Jupyter和交互式分析
-jupyter
-jupyterlab
-ipywidgets
-ipython
-notebook
+# ========== 股票数据获取 ==========
+akshare>=1.10.0
+yfinance>=0.2.0
+# tushare>=1.2.0  # 可选，需要token
 
-# 数据报告和导出
-nbconvert
-nbformat
-pdfkit
-reportlab
-openpyxl
+# ========== 技术分析 ==========
+TA-Lib>=0.4.25  # 如果需要更多技术指标
+
+# ========== Jupyter和交互分析 ==========
+jupyter>=1.0.0
+ipywidgets>=8.0.0
+notebook>=6.5.0
+
+# ========== 数据处理和存储 ==========
+openpyxl>=3.0.0  # Excel支持
+pyarrow>=10.0.0  # Parquet格式支持
+tables>=3.7.0    # HDF5支持
+
+# ========== 配置和日志 ==========
+PyYAML>=6.0
+colorlog>=6.7.0
+
+# ========== Web和报告 ==========
+Jinja2>=3.1.0    # HTML模板
+html5lib>=1.1
+beautifulsoup4>=4.11.0
+
+# ========== 网络请求 ==========
+requests>=2.28.0
+urllib3>=1.26.0
+aiohttp>=3.8.0   # 异步请求
+
+# ========== 日期时间处理 ==========
+python-dateutil>=2.8.0
+pytz>=2022.0
+
+# ========== 类型提示（开发用） ==========
+mypy>=0.990
+typing-extensions>=4.0.0
+
+# ========== 测试框架 ==========
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# ========== 代码质量 ==========
+black>=22.0.0
+flake8>=5.0.0
+isort>=5.10.0
+
+# ========== 机器学习（可选） ==========
+# scikit-learn>=1.2.0
+# xgboost>=1.7.0
+# lightgbm>=3.3.0
+# statsmodels>=0.13.0

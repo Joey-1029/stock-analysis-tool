@@ -1,888 +1,649 @@
-# main.py
+"""
+专业版主程序 - 港股专用分析流程
+"""
 import sys
-import subprocess
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from datetime import datetime
+import json
+import logging
+from typing import Dict, Any
 
 # 添加src到Python路径
 sys.path.append(str(Path(__file__).parent / 'src'))
 
-def check_data_directories():
-    """检查并创建数据目录结构"""
-    base_dir = Path(__file__).parent
+def generate_hk_report(analysis_results: Dict, config, logger: logging.Logger):
+    """
+    生成港股专用HTML报告
+    Args:
+        analysis_results: 分析结果字典
+        config: 配置对象
+        logger: 日志记录器
+    """
+    report_dir = Path(config.paths.reports_dir)
+    report_dir.mkdir(exist_ok=True)
     
-    # 只创建必要的目录，不创建config下的目录
-    directories = [
-        base_dir / 'data',
-        base_dir / 'data' / 'raw',
-        base_dir / 'data' / 'cleaned',
-        base_dir / 'data' / 'analysis',
-        base_dir / 'data' / 'reports'
-    ]
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    report_file = report_dir / f'hk_stock_analysis_report_{timestamp}.html'
     
-    for directory in directories:
-        if not directory.exists():
-            directory.mkdir(parents=True, exist_ok=True)
-            print(f"Created directory: {directory}")
-    
-    return directories
-
-def get_data_status():
-    """获取数据文件状态"""
-    data_dir = Path(__file__).parent / 'data'
-    raw_dir = data_dir / 'raw'
-    cleaned_dir = data_dir / 'cleaned'
-    analysis_dir = data_dir / 'analysis'
-    
-    raw_files = list(raw_dir.glob("*.csv")) if raw_dir.exists() else []
-    cleaned_files = list(cleaned_dir.glob("*.csv")) if cleaned_dir.exists() else []
-    analysis_files = list(analysis_dir.glob("*.csv")) if analysis_dir.exists() else []
-    
-    return {
-        'raw_count': len(raw_files),
-        'cleaned_count': len(cleaned_files),
-        'analysis_count': len(analysis_files),
-        'raw_files': [f.name for f in raw_files],
-        'cleaned_files': [f.name for f in cleaned_files],
-        'analysis_files': [f.name for f in analysis_files]
+    # 港股名称映射 - 支持多种格式的代码
+    hk_stock_names = {
+        # 原始格式
+        '00700': '腾讯控股',
+        '09988': '阿里巴巴',
+        '00941': '中国移动',
+        '01810': '小米集团',
+        '03690': '美团点评',
+        '02020': '安踏体育',
+        '09618': '京东集团',
+        '09868': '小鹏汽车',
+        '09999': '网易',
+        '09626': '哔哩哔哩',
+        # 整数格式
+        700: '腾讯控股',
+        9988: '阿里巴巴',
+        941: '中国移动',
+        1810: '小米集团',
+        3690: '美团点评',
+        2020: '安踏体育',
+        9618: '京东集团',
+        9868: '小鹏汽车',
+        9999: '网易',
+        9626: '哔哩哔哩'
     }
-
-def run_data_fetcher():
-    """运行数据获取模块"""
-    print("\n" + "="*60)
-    print("DATA FETCHER MODULE")
-    print("="*60)
-    print("Fetching stock data using AKShare...")
+    
+    # 创建HTML报告
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>港股分析报告 - {datetime.now().strftime('%Y-%m-%d')}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            .header {{ background: #f0f0f0; padding: 20px; border-radius: 5px; }}
+            .section {{ margin: 30px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }}
+            .stock-card {{ display: inline-block; width: 300px; margin: 15px; padding: 15px; border: 1px solid #eee; }}
+            .metric {{ margin: 10px 0; }}
+            .good {{ color: green; font-weight: bold; }}
+            .warning {{ color: orange; font-weight: bold; }}
+            .bad {{ color: red; font-weight: bold; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th, td {{ border: 1px solid #ddd; padding: 12px; text-align: center; }}
+            th {{ background-color: #f2f2f2; }}
+            .summary {{ background: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>港股分析报告</h1>
+            <p>生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>分析股票数: {len(analysis_results)}</p>
+        </div>
+    """
+    
+    # 添加港股分析结果
+    for ticker, result in analysis_results.items():
+        risk_report = result.get('risk_report', {})
+        summary = risk_report.get('risk_summary', {})
+        
+        # 获取港股中文名（支持多种代码格式）
+        ticker_str = str(ticker) if not isinstance(ticker, str) else ticker
+        stock_name = hk_stock_names.get(ticker, hk_stock_names.get(ticker_str, ticker_str))
+        
+        # 如果代码是整数且小于5位，前面补0到5位
+        if isinstance(ticker, int) and ticker < 10000:
+            ticker_display = f"{ticker:05d}"
+        else:
+            ticker_display = ticker_str
+        
+        # 风险评级颜色
+        risk_color = "good"
+        risk_rating = summary.get('risk_rating', '')
+        if '中高风险' in risk_rating or '高风险' in risk_rating:
+            risk_color = "bad"
+        elif '中等风险' in risk_rating:
+            risk_color = "warning"
+        
+        html_content += f"""
+        <div class="section">
+            <h2>{stock_name} ({ticker_display})</h2>
+            <div class="metric">
+                <strong>风险评级:</strong> <span class="{risk_color}">{risk_rating}</span>
+            </div>
+            <div class="metric">
+                <strong>年化收益率:</strong> {summary.get('annual_return', 0):.2%}
+            </div>
+            <div class="metric">
+                <strong>最大回撤:</strong> {summary.get('max_drawdown', 0):.2%}
+            </div>
+            <div class="metric">
+                <strong>夏普比率:</strong> {summary.get('sharpe_ratio', 0):.3f}
+            </div>
+            <div class="metric">
+                <strong>胜率:</strong> {summary.get('win_rate', 0):.2%}
+            </div>
+            <div class="metric">
+                <strong>年化波动率:</strong> {summary.get('annual_volatility', 0):.2%}
+            </div>
+        </div>
+        """
+    
+    # 添加比较表格
+    html_content += """
+    <div class="section">
+        <h2>港股表现对比</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>股票代码</th>
+                    <th>股票名称</th>
+                    <th>年化收益率</th>
+                    <th>最大回撤</th>
+                    <th>夏普比率</th>
+                    <th>风险评级</th>
+                    <th>建议</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    
+    for ticker, result in analysis_results.items():
+        risk_report = result.get('risk_report', {})
+        summary = risk_report.get('risk_summary', {})
+        
+        # 获取港股中文名
+        ticker_str = str(ticker) if not isinstance(ticker, str) else ticker
+        stock_name = hk_stock_names.get(ticker, hk_stock_names.get(ticker_str, ticker_str))
+        
+        # 格式化显示代码
+        if isinstance(ticker, int) and ticker < 10000:
+            ticker_display = f"{ticker:05d}"
+        else:
+            ticker_display = ticker_str
+        
+        # 风险评级颜色
+        risk_color = "good"
+        risk_rating = summary.get('risk_rating', '')
+        if '中高风险' in risk_rating or '高风险' in risk_rating:
+            risk_color = "bad"
+        elif '中等风险' in risk_rating:
+            risk_color = "warning"
+        
+        # 生成建议
+        sharpe = summary.get('sharpe_ratio', 0)
+        max_dd = abs(summary.get('max_drawdown', 0))
+        
+        if sharpe > 1.0 and max_dd < 0.15:
+            recommendation = "强烈推荐"
+            rec_class = "good"
+        elif sharpe > 0.5 and max_dd < 0.25:
+            recommendation = "推荐"
+            rec_class = "good"
+        elif sharpe > 0:
+            recommendation = "谨慎持有"
+            rec_class = "warning"
+        else:
+            recommendation = "建议回避"
+            rec_class = "bad"
+        
+        html_content += f"""
+                <tr>
+                    <td><strong>{ticker_display}</strong></td>
+                    <td>{stock_name}</td>
+                    <td>{summary.get('annual_return', 0):.2%}</td>
+                    <td>{summary.get('max_drawdown', 0):.2%}</td>
+                    <td>{summary.get('sharpe_ratio', 0):.3f}</td>
+                    <td class="{risk_color}">{risk_rating}</td>
+                    <td class="{rec_class}">{recommendation}</td>
+                </tr>
+        """
+    
+    html_content += """
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="summary">
+        <h3>港股市场总结</h3>
+        <p>1. 港股市场特点：国际化程度高，受全球市场影响较大</p>
+        <p>2. 交易时间：09:30-12:00, 13:00-16:00 (香港时间)</p>
+        <p>3. 交易单位：通常以手为单位，不同股票每手股数不同</p>
+        <p>4. 结算周期：T+2交收制度</p>
+    </div>
+    
+    <div class="section">
+        <h3>报告说明</h3>
+        <ul>
+            <li><strong>夏普比率</strong>: 衡量风险调整后收益，越高越好</li>
+            <li><strong>最大回撤</strong>: 历史上最大亏损幅度，越低越好</li>
+            <li><strong>风险评级</strong>: A-低风险, B-中低风险, C-中等风险, D-中高风险, E-高风险</li>
+            <li>港股数据基于前复权价格计算</li>
+            <li>本报告仅供参考，不构成投资建议</li>
+        </ul>
+    </div>
+    
+    <footer style="margin-top: 50px; text-align: center; color: #666;">
+        <p>Generated by HK Stock Analysis Tool | {datetime.now().strftime('%Y')}</p>
+    </footer>
+    </body>
+    </html>
+    """
     
     try:
-        # 直接运行Python文件
-        result = subprocess.run(
-            [sys.executable, "src/data_fetcher_akshare.py"],
-            capture_output=True,
-            text=True,
-            cwd=Path(__file__).parent
-        )
+        # 保存HTML文件
+        with open(report_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
         
-        if result.returncode == 0:
-            print("✓ Data fetcher completed successfully")
-            if result.stdout:
-                print("\nOutput:")
-                print(result.stdout)
-        else:
-            print("✗ Data fetcher encountered errors")
-            if result.stderr:
-                print("\nErrors:")
-                print(result.stderr)
+        # 保存JSON格式的详细数据
+        json_file = report_dir / f'hk_analysis_data_{timestamp}.json'
+        
+        # 创建可序列化的结果（确保所有键都是字符串）
+        serializable_results = {}
+        
+        for ticker, result in analysis_results.items():
+            # 确保键是字符串
+            ticker_key = str(ticker)
             
+            # 获取股票名称
+            ticker_for_name = ticker if isinstance(ticker, (str, int)) else str(ticker)
+            stock_name = hk_stock_names.get(ticker_for_name, 
+                                          hk_stock_names.get(str(ticker_for_name), str(ticker_for_name)))
+            
+            serializable_results[ticker_key] = {
+                'name': stock_name,
+                'risk_summary': result.get('risk_report', {}).get('risk_summary', {}),
+                'data_points': len(result.get('data', pd.DataFrame())),
+                'analysis_date': datetime.now().isoformat(),
+                'original_ticker': ticker_key
+            }
+        
+        # 保存JSON文件
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(serializable_results, f, indent=2, ensure_ascii=False, default=str)
+        
+        logger.info("HTML报告已保存: %s", report_file)
+        logger.info("JSON数据已保存: %s", json_file)
+        
+        return {
+            'html_report': str(report_file),
+            'json_data': str(json_file),
+            'timestamp': timestamp
+        }
+        
     except Exception as e:
-        print(f"Error running data fetcher: {e}")
-        print("\nYou can also run directly: python src/data_fetcher_akshare.py")
+        logger.error("生成报告失败: %s", str(e), exc_info=True)
+        return None
 
-def run_data_cleaner():
-    """运行数据清洗模块"""
-    print("\n" + "="*60)
-    print("DATA CLEANER MODULE")
-    print("="*60)
-    
-    try:
-        from src.data_cleaner import StockDataCleaner
-        
-        # 创建清理器实例
-        cleaner = StockDataCleaner()
-        
-        # 检查原始数据
-        data_status = get_data_status()
-        if data_status['raw_count'] == 0:
-            print("No raw data files found in data/raw/")
-            print("Please run 'Fetch data' first to download stock data.")
-            return
-        
-        print(f"Found {data_status['raw_count']} raw data files")
-        
-        # 显示菜单
-        print("\nAvailable options:")
-        print("1. Clean all raw data files")
-        print("2. Clean specific stock")
-        print("3. Create merged dataset only")
-        
-        choice = input("\nEnter your choice (1-3): ").strip()
-        
-        if choice == '1':
-            print("\nCleaning all raw data files...")
-            cleaned_data = cleaner.clean_all_stocks()
-            
-            if cleaned_data:
-                print(f"\n✓ Successfully cleaned {len(cleaned_data)} stocks:")
-                for ticker in cleaned_data.keys():
-                    print(f"  - {ticker}")
-            else:
-                print("✗ No data was cleaned")
-                
-        elif choice == '2':
-            print("\nAvailable raw data files:")
-            for i, filename in enumerate(data_status['raw_files'], 1):
-                print(f"  {i}. {filename}")
-            
-            try:
-                file_choice = int(input("\nSelect file number: ").strip())
-                if 1 <= file_choice <= len(data_status['raw_files']):
-                    filename = data_status['raw_files'][file_choice - 1]
-                    
-                    # 确定股票代码和名称
-                    if '00700' in filename:
-                        ticker = '00700.HK'
-                        name = 'Tencent'
-                    elif '09988' in filename:
-                        ticker = '09988.HK'
-                        name = 'Alibaba'
-                    else:
-                        # 尝试从文件名提取
-                        ticker = filename.replace('.csv', '')
-                        name = 'Unknown Stock'
-                    
-                    print(f"\nCleaning {name} ({ticker})...")
-                    raw_df = cleaner.load_raw_data(filename)
-                    
-                    if raw_df is not None:
-                        cleaned_df = cleaner.clean_data(raw_df, ticker, name)
-                        if cleaned_df is not None:
-                            print(f"✓ Successfully cleaned {len(cleaned_df)} rows")
-                    else:
-                        print("✗ Failed to load raw data")
-                else:
-                    print("Invalid selection")
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-            except Exception as e:
-                print(f"Error: {e}")
-                
-        elif choice == '3':
-            print("\nCreating merged dataset...")
-            # 先尝试清理所有数据，然后创建合并数据集
-            cleaned_data = cleaner.clean_all_stocks()
-            if cleaned_data:
-                merged_df = cleaner.create_merged_dataset(cleaned_data)
-                if merged_df is not None:
-                    print(f"✓ Created merged dataset with {len(merged_df.columns)} stocks")
-            else:
-                print("✗ No data available to merge")
-        else:
-            print("Invalid choice. Cleaning all data...")
-            cleaner.clean_all_stocks()
-            
-    except ImportError:
-        print("Error: data_cleaner.py not found in src/ directory")
-    except Exception as e:
-        print(f"Error running data cleaner: {e}")
-        import traceback
-        traceback.print_exc()
-
-def run_visualizer():
-    """运行可视化模块"""
-    print("\n" + "="*60)
-    print("VISUALIZER MODULE")
-    print("="*60)
-    
-    try:
-        from src.visualizer import StockVisualizer
-        
-        # 创建可视化器实例
-        visualizer = StockVisualizer()
-        
-        # 检查数据
-        data_status = get_data_status()
-        
-        if data_status['cleaned_count'] == 0 and data_status['raw_count'] == 0:
-            print("No data files found.")
-            print("Please run 'Fetch data' and 'Clean data' first.")
-            return
-        
-        # 显示菜单
-        print("\nAvailable visualization options:")
-        print("1. Analyze single stock")
-        print("2. Compare two stocks")
-        print("3. Portfolio analysis")
-        print("4. Back to main menu")
-        
-        choice = input("\nEnter choice (1-4): ").strip()
-        
-        if choice == '1':
-            # 单只股票分析
-            if data_status['cleaned_count'] > 0:
-                print("\nUsing cleaned data (recommended)...")
-                files = data_status['cleaned_files']
-                prefix = 'cleaned/'
-            else:
-                print("\nUsing raw data (cleaned data not available)...")
-                files = data_status['raw_files']
-                prefix = 'raw/'
-            
-            if len(files) == 0:
-                print("No data files available.")
-                return
-            
-            print(f"\nAvailable stocks:")
-            for i, filename in enumerate(files, 1):
-                display_name = filename.replace('_cleaned.csv', '').replace('.csv', '')
-                print(f"  {i}. {display_name}")
-            
-            try:
-                stock_choice = int(input("\nSelect stock number: ").strip())
-                if 1 <= stock_choice <= len(files):
-                    filename = files[stock_choice - 1]
-                    filepath = f"{prefix}{filename}"
-                    
-                    # 确定股票名称
-                    display_name = filename.replace('_cleaned.csv', '').replace('.csv', '')
-                    
-                    if '00700' in filename:
-                        name = "Tencent Holdings"
-                        ticker = "00700.HK"
-                    elif '09988' in filename:
-                        name = "Alibaba Group"
-                        ticker = "09988.HK"
-                    else:
-                        name = display_name
-                        ticker = display_name
-                    
-                    print(f"\nLoading {name} ({ticker})...")
-                    df = visualizer.load_stock_data(filepath)
-                    
-                    if df is not None:
-                        print(f"✓ Loaded {len(df)} rows of data")
-                        visualizer.plot_price_trend(df, name, ticker)
-                    else:
-                        print("✗ Failed to load data")
-                else:
-                    print("Invalid selection")
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-            except Exception as e:
-                print(f"Error: {e}")
-                
-        elif choice == '2':
-            # 比较两只股票
-            if data_status['cleaned_count'] >= 2:
-                print("\nUsing cleaned data...")
-                files = data_status['cleaned_files']
-                prefix = 'cleaned/'
-            elif data_status['raw_count'] >= 2:
-                print("\nUsing raw data (cleaned data insufficient)...")
-                files = data_status['raw_files']
-                prefix = 'raw/'
-            else:
-                print("Need at least 2 data files for comparison.")
-                return
-            
-            print(f"\nSelect first stock:")
-            for i, filename in enumerate(files, 1):
-                display_name = filename.replace('_cleaned.csv', '').replace('.csv', '')
-                print(f"  {i}. {display_name}")
-            
-            try:
-                stock1_choice = int(input("\nSelect first stock number: ").strip())
-                if not (1 <= stock1_choice <= len(files)):
-                    print("Invalid selection")
-                    return
-                
-                print(f"\nSelect second stock:")
-                for i, filename in enumerate(files, 1):
-                    display_name = filename.replace('_cleaned.csv', '').replace('.csv', '')
-                    print(f"  {i}. {display_name}")
-                
-                stock2_choice = int(input("\nSelect second stock number: ").strip())
-                if not (1 <= stock2_choice <= len(files)):
-                    print("Invalid selection")
-                    return
-                
-                # 获取文件信息
-                file1 = files[stock1_choice - 1]
-                file2 = files[stock2_choice - 1]
-                
-                # 确定股票名称
-                name1 = file1.replace('_cleaned.csv', '').replace('.csv', '')
-                name2 = file2.replace('_cleaned.csv', '').replace('.csv', '')
-                
-                if '00700' in name1:
-                    display_name1 = "Tencent"
-                    ticker1 = "00700.HK"
-                elif '09988' in name1:
-                    display_name1 = "Alibaba"
-                    ticker1 = "09988.HK"
-                else:
-                    display_name1 = name1
-                    ticker1 = name1
-                
-                if '00700' in name2:
-                    display_name2 = "Tencent"
-                    ticker2 = "00700.HK"
-                elif '09988' in name2:
-                    display_name2 = "Alibaba"
-                    ticker2 = "09988.HK"
-                else:
-                    display_name2 = name2
-                    ticker2 = name2
-                
-                print(f"\nComparing {display_name1} vs {display_name2}...")
-                visualizer.compare_two_stocks(
-                    file1=f"{prefix}{file1}",
-                    file2=f"{prefix}{file2}",
-                    name1=display_name1,
-                    name2=display_name2,
-                    ticker1=ticker1,
-                    ticker2=ticker2
-                )
-                
-            except ValueError:
-                print("Invalid input. Please enter numbers.")
-            except Exception as e:
-                print(f"Error: {e}")
-                
-        elif choice == '3':
-            # 投资组合分析
-            if data_status['cleaned_count'] < 2:
-                print("Need at least 2 cleaned stocks for portfolio analysis.")
-                print("Please run 'Clean data' first.")
-                return
-            
-            print("\nAvailable cleaned stocks:")
-            files = data_status['cleaned_files']
-            for i, filename in enumerate(files, 1):
-                ticker = filename.replace('_cleaned.csv', '')
-                print(f"  {i}. {ticker}")
-            
-            try:
-                choices = input("\nEnter stock numbers (comma-separated, e.g., 1,2): ").strip()
-                selected_indices = [int(x.strip()) - 1 for x in choices.split(',')]
-                
-                # 验证选择
-                valid_indices = [idx for idx in selected_indices if 0 <= idx < len(files)]
-                if len(valid_indices) < 2:
-                    print("Need at least 2 valid stocks selected.")
-                    return
-                
-                selected_files = [files[idx] for idx in valid_indices]
-                tickers = [f.replace('_cleaned.csv', '') for f in selected_files]
-                
-                # 映射名称
-                name_map = {
-                    '00700.HK': 'Tencent Holdings',
-                    '09988.HK': 'Alibaba Group'
-                }
-                names = [name_map.get(t, t) for t in tickers]
-                
-                print(f"\nPortfolio with {len(selected_files)} stocks:")
-                for name, ticker in zip(names, tickers):
-                    print(f"  - {name} ({ticker})")
-                
-                # 询问权重
-                weight_choice = input("\nUse equal weights? (y/n): ").lower().strip()
-                
-                if weight_choice == 'y' or weight_choice == '':
-                    weights = None
-                    print("Using equal weights.")
-                else:
-                    weights = []
-                    total = 0
-                    for name, ticker in zip(names, tickers):
-                        while True:
-                            try:
-                                weight = float(input(f"  Weight for {name} ({ticker}) (0-1): "))
-                                if 0 <= weight <= 1:
-                                    weights.append(weight)
-                                    total += weight
-                                    break
-                                else:
-                                    print("Weight must be between 0 and 1.")
-                            except ValueError:
-                                print("Invalid input. Please enter a number.")
-                    
-                    if abs(total - 1.0) > 0.001:
-                        print(f"Weights sum to {total:.3f}, not 1. Using equal weights instead.")
-                        weights = None
-                
-                # 运行投资组合分析
-                file_paths = [f"cleaned/{f}" for f in selected_files]
-                visualizer.analyze_portfolio(
-                    files=file_paths,
-                    names=names,
-                    tickers=tickers,
-                    weights=weights
-                )
-                
-            except ValueError:
-                print("Invalid input. Please enter valid numbers.")
-            except Exception as e:
-                print(f"Error: {e}")
-                
-        elif choice == '4':
-            return
-        else:
-            print("Invalid choice")
-            
-    except ImportError:
-        print("Error: visualizer.py not found in src/ directory")
-    except Exception as e:
-        print(f"Error running visualizer: {e}")
-        import traceback
-        traceback.print_exc()
-
-def run_analyzer():
-    """运行分析模块"""
-    print("\n" + "="*60)
-    print("TECHNICAL ANALYZER MODULE")
-    print("="*60)
-    
-    try:
-        from src.analyzer import StockAnalyzer
-        
-        # 创建分析器实例
-        analyzer = StockAnalyzer()
-        
-        # 检查数据
-        data_status = get_data_status()
-        if data_status['cleaned_count'] == 0:
-            print("No cleaned data found.")
-            print("Please run 'Clean data' first.")
-            return
-        
-        print(f"Found {data_status['cleaned_count']} cleaned data files")
-        
-        # 显示菜单
-        print("\nAvailable analysis options:")
-        print("1. Complete technical analysis (full report + charts)")
-        print("2. Quick analysis (summary only)")
-        print("3. Analyze all stocks")
-        print("4. Compare stock returns")
-        
-        choice = input("\nEnter choice (1-4): ").strip()
-        
-        if choice == '1':
-            # 完整技术分析
-            print("\nAvailable stocks:")
-            files = data_status['cleaned_files']
-            for i, filename in enumerate(files, 1):
-                ticker = filename.replace('_cleaned.csv', '')
-                print(f"  {i}. {ticker}")
-            
-            try:
-                stock_choice = int(input("\nSelect stock number: ").strip())
-                if 1 <= stock_choice <= len(files):
-                    filename = files[stock_choice - 1]
-                    ticker = filename.replace('_cleaned.csv', '')
-                    
-                    print(f"\nRunning complete technical analysis for {ticker}...")
-                    analyzer.analyze_stock(ticker)
-                else:
-                    print("Invalid selection")
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-            except Exception as e:
-                print(f"Error: {e}")
-                
-        elif choice == '2':
-            # 快速分析
-            print("\nAvailable stocks:")
-            files = data_status['cleaned_files']
-            for i, filename in enumerate(files, 1):
-                ticker = filename.replace('_cleaned.csv', '')
-                print(f"  {i}. {ticker}")
-            
-            try:
-                stock_choice = int(input("\nSelect stock number: ").strip())
-                if 1 <= stock_choice <= len(files):
-                    filename = files[stock_choice - 1]
-                    ticker = filename.replace('_cleaned.csv', '')
-                    
-                    print(f"\nRunning quick analysis for {ticker}...")
-                    # 加载数据
-                    df = analyzer.load_cleaned_data(ticker)
-                    
-                    if df is not None:
-                        # 计算指标
-                        df_with_indicators = analyzer.calculate_all_indicators(df.copy())
-                        # 生成报告
-                        report = analyzer.generate_analysis_report(df_with_indicators, ticker)
-                        # 打印报告
-                        analyzer.print_analysis_report(report)
-                    else:
-                        print(f"✗ Could not load data for {ticker}")
-                else:
-                    print("Invalid selection")
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-            except Exception as e:
-                print(f"Error: {e}")
-                
-        elif choice == '3':
-            # 分析所有股票
-            print("\nAnalyzing all stocks...")
-            files = data_status['cleaned_files']
-            
-            for filename in files:
-                ticker = filename.replace('_cleaned.csv', '')
-                print(f"\n{'='*40}")
-                print(f"Analyzing {ticker}...")
-                print(f"{'='*40}")
-                
-                try:
-                    analyzer.analyze_stock(ticker)
-                except Exception as e:
-                    print(f"✗ Error analyzing {ticker}: {e}")
-            
-            print("\n✓ Analysis of all stocks completed")
-            
-        elif choice == '4':
-            # 比较股票收益
-            if data_status['cleaned_count'] < 2:
-                print("Need at least 2 cleaned stocks for comparison.")
-                return
-            
-            print("\nSelect stocks to compare (comma-separated numbers):")
-            files = data_status['cleaned_files']
-            for i, filename in enumerate(files, 1):
-                ticker = filename.replace('_cleaned.csv', '')
-                print(f"  {i}. {ticker}")
-            
-            try:
-                choices = input("\nEnter stock numbers (e.g., 1,2,3): ").strip()
-                selected_indices = [int(x.strip()) - 1 for x in choices.split(',')]
-                
-                # 加载选中的股票数据
-                selected_stocks = []
-                for idx in selected_indices:
-                    if 0 <= idx < len(files):
-                        filename = files[idx]
-                        ticker = filename.replace('_cleaned.csv', '')
-                        df = analyzer.load_cleaned_data(ticker)
-                        
-                        if df is not None and 'close' in df.columns:
-                            selected_stocks.append({
-                                'ticker': ticker,
-                                'data': df
-                            })
-                
-                if len(selected_stocks) >= 2:
-                    # 比较分析
-                    print(f"\n{'='*60}")
-                    print(f"COMPARING {len(selected_stocks)} STOCKS")
-                    print(f"{'='*60}")
-                    
-                    print(f"\n{'Ticker':<15} {'Start Price':>12} {'End Price':>12} {'Return %':>12} {'Volatility':>12}")
-                    print("-" * 65)
-                    
-                    for stock in selected_stocks:
-                        ticker = stock['ticker']
-                        df = stock['data']
-                        
-                        start_price = df['close'].iloc[0]
-                        end_price = df['close'].iloc[-1]
-                        total_return = ((end_price / start_price) - 1) * 100
-                        volatility = df['close'].std() if len(df) > 1 else 0
-                        
-                        print(f"{ticker:<15} {start_price:>12.2f} {end_price:>12.2f} {total_return:>12.2f}% {volatility:>12.2f}")
-                    
-                    print("\n✓ Comparison completed")
-                else:
-                    print("Need at least 2 valid stocks for comparison.")
-                    
-            except ValueError:
-                print("Invalid input. Please enter valid numbers.")
-            except Exception as e:
-                print(f"Error: {e}")
-        else:
-            print("Invalid choice")
-            
-    except ImportError:
-        print("Error: analyzer.py not found in src/ directory")
-    except Exception as e:
-        print(f"Error running analyzer: {e}")
-        import traceback
-        traceback.print_exc()
-
-def run_reporter():
-    """运行报告生成模块"""
-    print("\n" + "="*60)
-    print("DATA QUALITY REPORTER MODULE")
-    print("="*60)
-    
-    try:
-        from src.data_reporter import DataQualityReporter
-        
-        # 创建报告器实例
-        reporter = DataQualityReporter()
-        
-        # 检查数据
-        data_status = get_data_status()
-        if data_status['cleaned_count'] == 0:
-            print("No cleaned data found.")
-            print("Please run 'Clean data' first.")
-            return
-        
-        print(f"Found {data_status['cleaned_count']} cleaned data files")
-        
-        # 显示菜单
-        print("\nAvailable reporting options:")
-        print("1. Generate quality report for single stock")
-        print("2. Generate quality reports for all stocks")
-        print("3. Generate summary quality report")
-        
-        choice = input("\nEnter choice (1-3): ").strip()
-        
-        if choice == '1':
-            # 单只股票质量报告
-            print("\nAvailable stocks:")
-            files = data_status['cleaned_files']
-            for i, filename in enumerate(files, 1):
-                ticker = filename.replace('_cleaned.csv', '')
-                print(f"  {i}. {ticker}")
-            
-            try:
-                stock_choice = int(input("\nSelect stock number: ").strip())
-                if 1 <= stock_choice <= len(files):
-                    filename = files[stock_choice - 1]
-                    ticker = filename.replace('_cleaned.csv', '')
-                    
-                    print(f"\nGenerating quality report for {ticker}...")
-                    reporter.generate_quality_report(ticker)
-                else:
-                    print("Invalid selection")
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-            except Exception as e:
-                print(f"Error: {e}")
-                
-        elif choice == '2':
-            # 所有股票质量报告
-            print("\nGenerating quality reports for all stocks...")
-            files = data_status['cleaned_files']
-            
-            for filename in files:
-                ticker = filename.replace('_cleaned.csv', '')
-                print(f"\n{'='*40}")
-                print(f"Generating report for {ticker}...")
-                print(f"{'='*40}")
-                
-                try:
-                    reporter.generate_quality_report(ticker)
-                except Exception as e:
-                    print(f"✗ Error generating report for {ticker}: {e}")
-            
-            print("\n✓ Quality reports for all stocks completed")
-            
-        elif choice == '3':
-            # 总结质量报告
-            print("\nGenerating summary quality report...")
-            files = data_status['cleaned_files']
-            
-            if not files:
-                print("No cleaned data files found.")
-                return
-            
-            all_reports = []
-            for filename in files:
-                ticker = filename.replace('_cleaned.csv', '')
-                try:
-                    # 加载数据
-                    data_path = Path(__file__).parent / 'data' / 'cleaned' / filename
-                    df = pd.read_csv(data_path, parse_dates=['date'], index_col='date')
-                    
-                    # 分析数据质量
-                    report = reporter.analyze_data_quality(df, ticker)
-                    all_reports.append(report)
-                    print(f"  ✓ Analyzed {ticker}")
-                    
-                except Exception as e:
-                    print(f"  ✗ Error analyzing {ticker}: {e}")
-            
-            # 显示总结
-            if all_reports:
-                print(f"\n{'='*60}")
-                print("DATA QUALITY SUMMARY REPORT")
-                print(f"{'='*60}")
-                
-                print(f"\n{'Ticker':<15} {'Rows':>8} {'Missing':>10} {'Issues':>10} {'Rating':>12}")
-                print("-" * 60)
-                
-                for report in all_reports:
-                    ticker = report['ticker']
-                    rows = report['basic_info']['total_rows']
-                    missing = len(report['missing_data'])
-                    issues = len(report['data_issues'])
-                    rating = report['quality_rating']
-                    
-                    print(f"{ticker:<15} {rows:>8} {missing:>10} {issues:>10} {rating:>12}")
-                
-                # 总体统计
-                total_stocks = len(all_reports)
-                good_count = sum(1 for r in all_reports if r['quality_rating'] in ['Excellent', 'Good'])
-                avg_quality = (good_count / total_stocks) * 100 if total_stocks > 0 else 0
-                
-                print("\nSUMMARY STATISTICS:")
-                print(f"  Total stocks analyzed: {total_stocks}")
-                print(f"  Good or Excellent quality: {good_count} ({avg_quality:.1f}%)")
-                print(f"  Total data issues found: {sum(len(r['data_issues']) for r in all_reports)}")
-                print(f"  Total missing values: {sum(len(r['missing_data']) for r in all_reports)}")
-            else:
-                print("✗ No reports were generated")
-                
-        else:
-            print("Invalid choice")
-            
-    except ImportError:
-        print("Error: data_reporter.py not found in src/ directory")
-    except Exception as e:
-        print(f"Error running reporter: {e}")
-        import traceback
-        traceback.print_exc()
-
-def run_full_pipeline():
-    """运行完整流程"""
-    print("\n" + "="*60)
-    print("FULL PIPELINE EXECUTION")
-    print("="*60)
-    print("This will run all modules in sequence:")
-    print("1. Fetch data")
-    print("2. Clean data")
-    print("3. Generate quality reports")
-    print("4. Technical analysis")
-    print("5. Data visualization")
-    
-    confirm = input("\nDo you want to continue? (y/n): ").lower().strip()
-    if confirm != 'y':
-        print("Pipeline cancelled.")
-        return
-    
-    modules = [
-        ("1. DATA FETCHING", run_data_fetcher),
-        ("2. DATA CLEANING", run_data_cleaner),
-        ("3. QUALITY REPORTING", run_reporter),
-        ("4. TECHNICAL ANALYSIS", run_analyzer),
-        ("5. DATA VISUALIZATION", run_visualizer)
+def setup_project_environment():
+    """设置项目环境"""
+    # 创建必要的目录
+    directories = [
+        'data/raw',
+        'data/cleaned', 
+        'data/analysis',
+        'data/reports',
+        'logs',
+        'config',
+        'models'
     ]
     
-    for module_name, module_function in modules:
-        print(f"\n{'='*40}")
-        print(module_name)
-        print(f"{'='*40}")
-        
+    for dir_path in directories:
+        Path(dir_path).mkdir(parents=True, exist_ok=True)
+        print("创建目录: %s" % dir_path)
+    
+    # 检查配置文件
+    config_file = Path('config/settings.yaml')
+    if not config_file.exists():
+        print("警告: 配置文件不存在，创建默认配置...")
         try:
-            module_function()
+            from config.config import Config
+            default_config = Config()
+            default_config.save_to_yaml('config/settings.yaml')
+            print("默认配置文件已创建: config/settings.yaml")
         except Exception as e:
-            print(f"✗ Error in {module_name}: {e}")
-        
-        # 询问是否继续
-        if module_name != modules[-1][0]:
-            cont = input("\nContinue to next module? (y/n): ").lower().strip()
-            if cont != 'y':
-                print("Pipeline stopped by user.")
-                break
-    
-    print("\n" + "="*60)
-    print("PIPELINE EXECUTION COMPLETE!")
-    print("="*60)
+            print("创建配置文件失败: %s" % e)
 
-def show_data_status():
-    """显示数据状态"""
-    print("\n" + "="*60)
-    print("DATA STATUS")
-    print("="*60)
-    
-    data_status = get_data_status()
-    
-    print(f"\nRaw Data Files: {data_status['raw_count']}")
-    if data_status['raw_files']:
-        for filename in data_status['raw_files']:
-            print(f"  - {filename}")
-    else:
-        print("  No raw data files")
-    
-    print(f"\nCleaned Data Files: {data_status['cleaned_count']}")
-    if data_status['cleaned_files']:
-        for filename in data_status['cleaned_files']:
-            print(f"  - {filename}")
-    else:
-        print("  No cleaned data files")
-    
-    print(f"\nAnalysis Files: {data_status['analysis_count']}")
-    if data_status['analysis_files']:
-        for filename in data_status['analysis_files']:
-            print(f"  - {filename}")
-    else:
-        print("  No analysis files")
-    
-    print(f"\nDirectories:")
-    data_dir = Path(__file__).parent / 'data'
-    for subdir in ['raw', 'cleaned', 'analysis', 'reports']:
-        subdir_path = data_dir / subdir
-        if subdir_path.exists():
-            file_count = len(list(subdir_path.glob("*")))
-            print(f"  - data/{subdir}: {file_count} files")
-        else:
-            print(f"  - data/{subdir}: does not exist")
+def check_dependencies():
+    """检查依赖"""
+    print("\n检查项目依赖...")
+    try:
+        import akshare
+        import pandas
+        import numpy
+        import matplotlib
+        import seaborn
+        
+        print("核心依赖检查通过")
+        return True
+    except ImportError as e:
+        print("缺少依赖: %s" % e)
+        print("请运行: pip install -r requirements.txt")
+        return False
 
 def main():
-    """主菜单"""
-    # 初始化目录结构
-    print("Initializing Stock Analysis Tool...")
-    check_data_directories()
+    """主函数 - 港股专用分析流程"""
+    print("=" * 60)
+    print("港股分析专业版 v2.0")
+    print("=" * 60)
     
-    while True:
-        # 获取当前数据状态
-        data_status = get_data_status()
+    # 1. 设置项目环境
+    setup_project_environment()
+    
+    # 2. 检查依赖
+    if not check_dependencies():
+        print("依赖检查失败，请先安装依赖")
+        return
+    
+    # 3. 加载配置
+    try:
+        from config.config import get_config, setup_logging
+        config = get_config()
+        logger = setup_logging(config.logging)
+    except Exception as e:
+        print("配置加载失败: %s" % e)
+        print("请检查 config/config.py 和 config/settings.yaml")
+        return
+    
+    logger.info("配置和日志系统初始化完成")
+    logger.info("项目根目录: %s", Path(__file__).parent)
+    
+    try:
+        # 4. 港股数据获取
+        logger.info("步骤1: 港股数据获取")
+        print("\n正在获取港股数据...")
         
-        print("\n" + "=" * 60)
-        print("STOCK ANALYSIS TOOL - MAIN MENU")
-        print("=" * 60)
-        print(f"Data Status: {data_status['raw_count']} raw, {data_status['cleaned_count']} cleaned, {data_status['analysis_count']} analysis")
+        # 港股代码列表（简化版）
+        hk_stocks_to_download = [
+            ('00700', '腾讯控股'),
+            ('09988', '阿里巴巴'),
+            ('00941', '中国移动'),
+            ('01810', '小米集团')
+        ]
         
-        print("\nAvailable modules:")
-        print("1. 📥 Fetch data (download new stock data)")
-        print("2. 🧹 Clean data (process raw data)")
-        print("3. 📊 Analyze data (technical analysis)")
-        print("4. 📈 Visualize data (charts and graphs)")
-        print("5. 📋 Generate reports (data quality)")
-        print("6. 🔄 Run full pipeline (all modules)")
-        print("7. 📊 Show data status")
-        print("8. ❌ Exit")
+        import akshare as ak
+        
+        raw_dir = Path('data/raw')
+        raw_dir.mkdir(exist_ok=True)
+        
+        downloaded_files = []
+        
+        for code, name in hk_stocks_to_download:
+            try:
+                logger.info("下载港股: %s (%s)", code, name)
+                
+                # 下载港股数据
+                df = ak.stock_hk_daily(symbol=code, adjust="qfq")
+                
+                if df is not None and not df.empty:
+                    # 保存数据
+                    timestamp = datetime.now().strftime('%Y%m%d')
+                    filename = f"HK_{code}_{name}_{timestamp}.csv"
+                    filepath = raw_dir / filename
+                    
+                    # 标准化数据格式
+                    if 'date' in df.columns:
+                        df['date'] = pd.to_datetime(df['date'])
+                        df.set_index('date', inplace=True)
+                    
+                    df['symbol'] = code
+                    df['name'] = name
+                    
+                    df.to_csv(filepath, encoding='utf-8')
+                    downloaded_files.append(filepath)
+                    
+                    logger.info("成功下载 %s: %s 条数据 -> %s", code, len(df), filename)
+                    print(f"  ✓ {name} ({code}): {len(df)} 条数据")
+                else:
+                    logger.warning("下载 %s 失败或数据为空", code)
+                    print(f"  ✗ {name} ({code}): 下载失败")
+                
+                # 延迟避免被封IP
+                time.sleep(2.0)
+                
+            except Exception as e:
+                logger.error("下载 %s 出错: %s", code, str(e))
+                print(f"  ✗ {name} ({code}): 错误 - {str(e)[:50]}")
+        
+        logger.info("港股下载完成: 成功 %s/%s", len(downloaded_files), len(hk_stocks_to_download))
+        
+        # 如果下载失败，询问是否继续
+        if len(downloaded_files) == 0:
+            print("\n警告: 没有成功下载任何港股数据")
+            user_choice = input("是否使用现有数据进行后续分析? (y/n): ").strip().lower()
+            if user_choice != 'y':
+                logger.info("用户选择退出")
+                return
+        
+        # 5. 数据清洗
+        logger.info("步骤2: 数据清洗")
+        print("\n正在清洗数据...")
+        
+        # 简单的数据清洗
+        cleaned_dir = Path('data/cleaned')
+        cleaned_dir.mkdir(exist_ok=True)
+        
+        cleaned_data = {}
+        
+        # 使用下载的文件或已有文件
+        files_to_clean = downloaded_files if downloaded_files else list(raw_dir.glob("HK_*.csv"))
+        
+        for filepath in files_to_clean[:10]:  # 最多处理10个文件
+            try:
+                df = pd.read_csv(filepath, parse_dates=['date'], index_col='date')
+                symbol = df['symbol'].iloc[0] if 'symbol' in df.columns else filepath.stem.split('_')[1]
+                name = df['name'].iloc[0] if 'name' in df.columns else 'Unknown'
+                
+                # 简单清洗：移除空值，确保必要列存在
+                required_cols = ['open', 'high', 'low', 'close', 'volume']
+                for col in required_cols:
+                    if col not in df.columns:
+                        logger.warning("文件 %s 缺少列: %s", filepath.name, col)
+                
+                # 只保留必要列
+                df_clean = df[required_cols].copy() if all(col in df.columns for col in required_cols) else df.copy()
+                
+                # 保存清洗后的数据
+                cleaned_filename = f"{symbol}_cleaned.csv"
+                cleaned_filepath = cleaned_dir / cleaned_filename
+                df_clean.to_csv(cleaned_filepath, encoding='utf-8')
+                
+                cleaned_data[symbol] = df_clean
+                logger.info("清洗完成: %s -> %s", filepath.name, cleaned_filename)
+                print(f"  ✓ {name} ({symbol}): 清洗完成")
+                
+            except Exception as e:
+                logger.error("清洗文件 %s 失败: %s", filepath.name, str(e))
+                print(f"  ✗ {filepath.name}: 清洗失败")
+        
+        if not cleaned_data:
+            logger.error("没有清洗后的数据可用")
+            print("错误: 没有可用的清洗数据")
+            return
+        
+        # 6. 技术分析
+        logger.info("步骤3: 技术分析")
+        print("\n正在进行技术分析...")
         
         try:
-            choice = input("\nEnter your choice (1-8): ").strip()
+            from src.analyzer import StockAnalyzer
+            analyzer = StockAnalyzer(config)
             
-            if choice == '1':
-                run_data_fetcher()
-            elif choice == '2':
-                run_data_cleaner()
-            elif choice == '3':
-                run_analyzer()
-            elif choice == '4':
-                run_visualizer()
-            elif choice == '5':
-                run_reporter()
-            elif choice == '6':
-                run_full_pipeline()
-            elif choice == '7':
-                show_data_status()
-            elif choice == '8':
-                print("\nThank you for using Stock Analysis Tool!")
-                print("Goodbye!")
-                break
-            else:
-                print("Invalid choice. Please enter 1-8.")
+            analysis_results = {}
+            
+            for symbol, data in cleaned_data.items():
+                if len(data) < 10:
+                    logger.warning("%s 数据不足 (%s行)，跳过分析", symbol, len(data))
+                    continue
+                    
+                logger.info("分析 %s...", symbol)
+                print(f"  分析 {symbol}...")
                 
-        except KeyboardInterrupt:
-            print("\n\nProgram interrupted by user.")
-            break
+                try:
+                    # 计算技术指标
+                    data_with_indicators = analyzer.calculate_all_indicators(data)
+                    
+                    # 计算收益率
+                    if 'close' in data_with_indicators.columns:
+                        prices = data_with_indicators['close']
+                        returns = prices.pct_change().dropna()
+                        
+                        if len(returns) < 5:
+                            logger.warning("%s 收益率数据不足", symbol)
+                            continue
+                        
+                        # 生成风险报告
+                        risk_report = analyzer.generate_risk_report(prices, returns)
+                        analysis_results[symbol] = {
+                            'data': data_with_indicators,
+                            'risk_report': risk_report
+                        }
+                        
+                        # 打印报告摘要
+                        if 'risk_summary' in risk_report:
+                            summary = risk_report['risk_summary']
+                            print(f"    - 年化收益: {summary.get('annual_return', 0):.2%}")
+                            print(f"    - 最大回撤: {summary.get('max_drawdown', 0):.2%}")
+                            print(f"    - 夏普比率: {summary.get('sharpe_ratio', 0):.3f}")
+                    else:
+                        logger.warning("%s 缺少close列", symbol)
+                        
+                except Exception as e:
+                    logger.error("分析 %s 失败: %s", symbol, str(e), exc_info=True)
+                    continue
+            
+            if not analysis_results:
+                logger.warning("没有生成任何分析结果")
+                print("警告: 没有生成分析结果，使用示例数据")
+                
+                # 创建示例数据
+                dates = pd.date_range(start='2023-01-01', end='2023-12-31', freq='B')
+                sample_data = pd.DataFrame({
+                    'open': np.random.normal(100, 10, len(dates)),
+                    'high': np.random.normal(105, 10, len(dates)),
+                    'low': np.random.normal(95, 10, len(dates)),
+                    'close': np.random.normal(100, 10, len(dates)),
+                    'volume': np.random.randint(100000, 1000000, len(dates))
+                }, index=dates)
+                
+                analysis_results = {
+                    'DEMO': {
+                        'data': sample_data,
+                        'risk_report': {
+                            'risk_summary': {
+                                'annual_return': 0.12,
+                                'max_drawdown': -0.08,
+                                'sharpe_ratio': 1.05,
+                                'risk_rating': 'B-中低风险'
+                            }
+                        }
+                    }
+                }
+                
         except Exception as e:
-            print(f"\nUnexpected error: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("技术分析失败: %s", str(e), exc_info=True)
+            print(f"技术分析失败: {str(e)}")
+            return
+        
+        # 7. 可视化
+        logger.info("步骤4: 数据可视化")
+        print("\n正在生成图表...")
+        try:
+            from src.visualizer import StockVisualizer
+            visualizer = StockVisualizer()
+            
+            # 生成关键图表
+            for symbol, result in analysis_results.items():
+                if len(result.get('data', pd.DataFrame())) > 10:
+                    logger.info("为 %s 生成图表...", symbol)
+                    try:
+                        # 获取股票名称
+                        hk_stock_names = {
+                            '00700': '腾讯控股',
+                            '09988': '阿里巴巴',
+                            '00941': '中国移动',
+                            '01810': '小米集团'
+                        }
+                        stock_name = hk_stock_names.get(symbol, symbol)
+                        
+                        visualizer.plot_price_trend(
+                            result['data'], 
+                            f"港股分析 - {stock_name}", 
+                            symbol
+                        )
+                        print(f"  ✓ {symbol}: 图表生成成功")
+                    except Exception as e:
+                        logger.warning("生成图表失败 %s: %s", symbol, e)
+                        print(f"  ✗ {symbol}: 图表生成失败")
+        except Exception as e:
+            logger.warning("可视化步骤失败: %s", e)
+            print(f"可视化失败: {str(e)}")
+            print("继续执行报告生成...")
+        
+        # 8. 生成报告
+        logger.info("步骤5: 生成港股分析报告")
+        print("\n正在生成港股分析报告...")
+        try:
+            report_info = generate_hk_report(analysis_results, config, logger)
+            
+            if report_info:
+                logger.info("港股分析流程完成！")
+                print("\n" + "=" * 60)
+                print("港股分析完成！")
+                print("=" * 60)
+                print(f"HTML报告: {report_info['html_report']}")
+                print(f"JSON数据: {report_info['json_data']}")
+                print(f"生成时间: {report_info['timestamp']}")
+                print("=" * 60)
+                
+                # 在浏览器中打开报告
+                try:
+                    import webbrowser
+                    html_path = Path(report_info['html_report'])
+                    if html_path.exists():
+                        webbrowser.open(f"file://{html_path.absolute()}")
+                        print("已在浏览器中打开报告")
+                except:
+                    pass
+                
+                # 显示分析总结
+                print("\n分析总结:")
+                for symbol, result in analysis_results.items():
+                    if symbol == 'DEMO':
+                        continue
+                        
+                    summary = result.get('risk_report', {}).get('risk_summary', {})
+                    stock_names = {
+                        '00700': '腾讯控股',
+                        '09988': '阿里巴巴',
+                        '00941': '中国移动',
+                        '01810': '小米集团'
+                    }
+                    stock_name = stock_names.get(symbol, symbol)
+                    
+                    print(f"  {stock_name} ({symbol}):")
+                    print(f"    年化收益: {summary.get('annual_return', 0):.2%}")
+                    print(f"    最大回撤: {summary.get('max_drawdown', 0):.2%}")
+                    print(f"    夏普比率: {summary.get('sharpe_ratio', 0):.3f}")
+                    print(f"    风险评级: {summary.get('risk_rating', '未评级')}")
+                    print()
+            else:
+                logger.warning("报告生成失败")
+                print("报告生成失败")
+                
+        except Exception as e:
+            logger.error("报告生成失败: %s", str(e), exc_info=True)
+            print(f"报告生成失败: {str(e)}")
+        
+    except KeyboardInterrupt:
+        logger.info("用户中断程序执行")
+        print("\n用户中断程序")
+    except Exception as e:
+        logger.error("程序运行出错: %s", str(e), exc_info=True)
+        print(f"程序运行出错: {str(e)}")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"Fatal error: {e}")
-        import traceback
-        traceback.print_exc()
+    import time
+    time.sleep(1)  # 延迟1秒，确保输出显示
+    main()

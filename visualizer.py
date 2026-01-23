@@ -65,8 +65,13 @@ class StockVisualizer:
             print(f"Error loading {filepath}: {e}")
             return None
     
-    def plot_price_trend(self, df, stock_name, ticker):
-        """Plot price trend and technical indicators"""
+    def plot_price_trend(self, df, stock_name, ticker, save_path=None):
+        """Plot price trend and technical indicators - Fixed for Auto-Report"""
+        # 如果有 save_path，切换到非交互模式，防止弹出窗口中断程序
+        if save_path:
+            import matplotlib
+            matplotlib.use('Agg') 
+            
         fig, axes = plt.subplots(3, 2, figsize=(16, 12))
         fig.suptitle(f'{stock_name} ({ticker}) - Stock Analysis', fontsize=16, y=1.02)
         
@@ -76,67 +81,47 @@ class StockVisualizer:
         axes[0, 0].set_ylabel('Price (HKD)')
         axes[0, 0].grid(True, alpha=0.3)
         
-        # Add moving averages
         if len(df) > 50:
-            df['MA20'] = df['close'].rolling(window=20).mean()
-            df['MA50'] = df['close'].rolling(window=50).mean()
-            axes[0, 0].plot(df.index, df['MA20'], 'orange', linewidth=1.5, alpha=0.8, label='MA20')
-            axes[0, 0].plot(df.index, df['MA50'], 'red', linewidth=1.5, alpha=0.8, label='MA50')
+            ma20 = df['close'].rolling(window=20).mean()
+            ma50 = df['close'].rolling(window=50).mean()
+            axes[0, 0].plot(df.index, ma20, 'orange', linewidth=1.5, alpha=0.8, label='MA20')
+            axes[0, 0].plot(df.index, ma50, 'red', linewidth=1.5, alpha=0.8, label='MA50')
             axes[0, 0].legend(loc='upper left')
         
         # 2. Volume
         axes[0, 1].bar(df.index, df['volume'], color='gray', alpha=0.6)
         axes[0, 1].set_title('Trading Volume')
-        axes[0, 1].set_ylabel('Volume')
         
         # 3. Daily Returns Distribution
-        if 'close' in df.columns:
-            returns = df['close'].pct_change().dropna()
-            axes[1, 0].hist(returns, bins=50, alpha=0.7, edgecolor='black', color='skyblue')
-            axes[1, 0].axvline(returns.mean(), color='red', linestyle='--', 
-                              label=f'Mean: {returns.mean():.3%}')
-            axes[1, 0].set_title('Daily Returns Distribution')
-            axes[1, 0].set_xlabel('Daily Return')
-            axes[1, 0].legend()
+        returns = df['close'].pct_change().dropna()
+        axes[1, 0].hist(returns, bins=50, alpha=0.7, edgecolor='black', color='skyblue')
+        axes[1, 0].set_title('Daily Returns Distribution')
         
         # 4. Cumulative Returns
-        if 'close' in df.columns:
-            cum_returns = (1 + returns).cumprod()
-            axes[1, 1].plot(cum_returns.index, cum_returns, linewidth=2, color='green')
-            axes[1, 1].set_title('Cumulative Returns')
-            axes[1, 1].set_ylabel('Cumulative Return')
-            axes[1, 1].grid(True, alpha=0.3)
+        cum_returns = (1 + returns).cumprod()
+        axes[1, 1].plot(cum_returns.index, cum_returns, linewidth=2, color='green')
+        axes[1, 1].set_title('Cumulative Returns')
         
         # 5. Price-Volume Relationship
         axes[2, 0].scatter(df['volume'], df['close'], alpha=0.5, s=10, color='purple')
         axes[2, 0].set_title('Price vs Volume')
-        axes[2, 0].set_xlabel('Volume')
-        axes[2, 0].set_ylabel('Price')
         
-        # 6. Rolling Volatility (30-day)
-        if 'close' in df.columns:
-            rolling_vol = returns.rolling(window=30).std() * np.sqrt(252)
-            axes[2, 1].plot(rolling_vol.index, rolling_vol, color='darkred')
-            axes[2, 1].set_title('30-Day Rolling Annualized Volatility')
-            axes[2, 1].set_ylabel('Volatility')
-            axes[2, 1].grid(True, alpha=0.3)
-        
+        # 6. Rolling Volatility
+        rolling_vol = returns.rolling(window=30).std() * np.sqrt(252)
+        axes[2, 1].plot(rolling_vol.index, rolling_vol, color='darkred')
+        axes[2, 1].set_title('30-Day Annualized Volatility')
+
         plt.tight_layout()
-        plt.show()
-        
-        # Print statistics
-        print(f"\n{stock_name} ({ticker}) Statistics:")
-        print("-" * 40)
-        if 'close' in df.columns:
-            print(f"Total days: {len(df)}")
-            print(f"Date range: {df.index.min().date()} to {df.index.max().date()}")
-            print(f"Highest price: HKD {df['close'].max():.2f}")
-            print(f"Lowest price: HKD {df['close'].min():.2f}")
-            print(f"Average price: HKD {df['close'].mean():.2f}")
-            print(f"Latest price: HKD {df['close'].iloc[-1]:.2f}")
-            print(f"Average daily return: {returns.mean():.3%}")
-            print(f"Daily volatility: {returns.std():.3%}")
-            print(f"Annualized volatility: {returns.std() * np.sqrt(252):.3%}")
+
+        # 【核心修复】保存逻辑
+        if save_path:
+            p = Path(save_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(p, bbox_inches='tight', dpi=100)
+            plt.close(fig) # 释放内存
+            print(f"Successfully saved chart to: {save_path}")
+        else:
+            plt.show()
         
         return df
     

@@ -1,0 +1,70 @@
+# config/settings.yaml
+# 股票数据分析项目配置文件
+
+data:
+  # A股列表
+  a_stocks:
+    - '600519'   # 贵州茅台
+    - '000858'   # 五粮液
+
+  # 港股列表
+  hk_stocks:
+    - '00700'    # 腾讯控股
+    - '09988'    # 阿里巴巴
+    - '01810'    # 小米集团
+
+  # 时间范围
+  start_date: '20230101'
+  end_date: null            # null 表示拉取到最新
+
+  # AkShare 请求设置
+  adjust_type: 'qfq'        # 前复权
+  request_delay: 1.0        # 每次请求间隔（秒），避免被封
+
+  # 重试设置
+  max_retries: 3
+  retry_delay: 2.0
+  backoff_factor: 1.5
+
+analysis:
+  # 移动平均周期
+  ma_periods: [5, 10, 20, 60]
+
+  # RSI
+  rsi_period: 14
+
+  # MACD
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+
+  # 布林带
+  bb_period: 20
+  bb_std: 2.0
+
+  # 风险参数
+  risk_free_rate: 0.02          # 无风险利率（年化）
+  trading_days_per_year: 252
+  var_confidence: 0.95
+
+  # 回测参数（预留，当前未启用）
+  initial_capital: 100000
+  commission_rate: 0.0003
+
+logging:
+  log_level: 'INFO'
+  log_dir: 'logs'
+  log_format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  log_retention_days: 7
+
+paths:
+  data_dir: 'data'
+  raw_dir: 'data/raw'
+  cleaned_dir: 'data/cleaned'
+  analysis_dir: 'data/analysis'
+  reports_dir: 'data/reports'
+
+report:
+  format: 'html'
+  include_charts: true
+  include_statistics: true

@@ -20,9 +20,6 @@ stock-analysis-tool/
 │   ├── reports/           # HTML 报告 + 图表 PNG
 │   └── stocks.db          # SQLite 数据库（取数层核心）
 ├── logs/                  # 运行日志
-├── notebooks/
-│   ├── 01_pipeline_demo.ipynb   # 完整流程演示
-│   └── 02_technical_analysis.ipynb  # 技术指标专题
 ├── src/
 │   ├── db_manager.py      # SQLite 取数层（写入 / 查询接口）
 │   ├── data_fetcher_akshare.py  # AkShare 数据获取（A股 / 港股）
